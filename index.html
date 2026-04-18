@@ -192,7 +192,7 @@
                 const opt = document.createElement('option');
                 opt.value = dom.id;
                 opt.textContent = dom.name;
-                if (dom.id === 'C') opt.selected = true;
+                if (dom.id === 'F') opt.selected = true;
                 animDomainSelect.appendChild(opt);
             });
 
@@ -201,6 +201,7 @@
                 const opt = document.createElement('option');
                 opt.value = index;
                 opt.textContent = prod.name;
+                if (index === 5) opt.selected = true;
                 animProductSelect.appendChild(opt);
             });
 
@@ -226,6 +227,19 @@
                 html += `</div></div>`;
                 container.innerHTML += html;
             });
+
+            const now = new Date();
+            const currentMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+            const startMins = Math.max(0, currentMins - 360);
+            
+            const startInput = document.getElementById('animStart');
+            const endInput = document.getElementById('animEnd');
+            
+            startInput.value = startMins;
+            endInput.value = currentMins;
+            
+            document.getElementById('animStartVal').textContent = formatMinutes(startMins);
+            document.getElementById('animEndVal').textContent = formatMinutes(currentMins);
         }
 
         async function scanDomain(domainId) {
@@ -710,15 +724,15 @@
                                     if (shiftLon && cLon < 0) {
                                         cLon += 360;
                                     }
-                                    const pos = proj(pt[1], cLon);
+                                    const post = proj(pt[1], cLon);
                                     if (first) {
-                                        ctx.moveTo(pos.x, pos.y);
+                                        ctx.moveTo(post.x, post.y);
                                         first = false;
                                     } else {
                                         if (Math.abs(cLon - prevLon) > 180) {
-                                            ctx.moveTo(pos.x, pos.y);
+                                            ctx.moveTo(post.x, post.y);
                                         } else {
-                                            ctx.lineTo(pos.x, pos.y);
+                                            ctx.lineTo(post.x, post.y);
                                         }
                                     }
                                     prevLon = cLon;
