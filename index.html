@@ -724,15 +724,15 @@
                                     if (shiftLon && cLon < 0) {
                                         cLon += 360;
                                     }
-                                    const post = proj(pt[1], cLon);
+                                    const pos = proj(pt[1], cLon);
                                     if (first) {
-                                        ctx.moveTo(post.x, post.y);
+                                        ctx.moveTo(pos.x, pos.y);
                                         first = false;
                                     } else {
                                         if (Math.abs(cLon - prevLon) > 180) {
-                                            ctx.moveTo(post.x, post.y);
+                                            ctx.moveTo(pos.x, pos.y);
                                         } else {
-                                            ctx.lineTo(post.x, post.y);
+                                            ctx.lineTo(pos.x, pos.y);
                                         }
                                     }
                                     prevLon = cLon;
@@ -952,12 +952,48 @@
 
             useEffect(() => {
                 h5wasm.ready.then(() => setReady(true));
-                fetch('https://unpkg.com/world-atlas@2/countries-110m.json')
-                    .then(res => res.json())
-                    .then(world => {
-                        const lands = topojson.feature(world, world.objects.countries).features;
-                        setCoastline(lands);
-                    }).catch(err => console.error("Map Atlas Load Error:", err));
+                
+                const fetchMaps = async () => {
+                    try {
+                        const urls = [
+                            './maps/world-110m.json',
+                            './maps/states-10m.json',
+                            './maps/canada-provinces.json',
+                            './maps/brazil-states.json'
+                        ];
+                        
+                        const responses = await Promise.all(urls.map(url => fetch(url).catch(e => null)));
+                        const jsons = [];
+                        
+                        for (const res of responses) {
+                            if (res && res.ok) {
+                                try {
+                                    jsons.push(await res.json());
+                                } catch (e) {
+                                    console.warn("Failed to parse map JSON:", res.url);
+                                }
+                            } else if (res) {
+                                console.warn("Failed to fetch map:", res.url, res.status);
+                            }
+                        }
+                        
+                        let allFeatures = [];
+                        jsons.forEach(data => {
+                            if (!data || !data.objects) return;
+                            const keys = Object.keys(data.objects);
+                            // Explicitly target countries/states if available, otherwise take the first key
+                            const targetKey = keys.includes('countries') ? 'countries' : (keys.includes('states') ? 'states' : keys[0]);
+                            const feats = topojson.feature(data, data.objects[targetKey]).features;
+                            allFeatures = allFeatures.concat(feats);
+                        });
+                        
+                        setCoastline(allFeatures);
+                    } catch (err) {
+                        console.error("Map Atlas Load Error:", err);
+                    }
+                };
+                
+                fetchMaps();
             }, []);
 
             useEffect(() => {
