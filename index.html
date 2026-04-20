@@ -179,7 +179,8 @@
             { code: "ABI-L2-DMW", channel: "C09", name: "DMW Band 9 (Mid WV)" },
             { code: "ABI-L2-DMW", channel: "C10", name: "DMW Band 10 (Lower WV)" },
             { code: "ABI-L2-DMW", channel: "C14", name: "DMW Band 14 (IR Window)" },
-            { code: "ABI-L2-DMWV", channel: "C08", name: "DMWV Band 8 (Clear Sky WV)" }
+            { code: "ABI-L2-DMWV", channel: "C08", name: "DMWV Band 8 (Clear Sky WV)" },
+            { code: "ALL", channel: "ALL", name: "Merged Shear Heatmap (All Channels)" }
         ];
 
         const DOMAINS = [
@@ -195,6 +196,7 @@
 
         dateInput.onchange = () => {
             PRODUCTS.forEach(p => {
+                if (p.channel === "ALL") return;
                 DOMAINS.forEach(d => {
                     const el = document.getElementById(`results-${d.id}-${p.channel}-${p.code}`);
                     if(el) el.innerHTML = '<span class="text-slate-400 italic">Not scanned</span>';
@@ -217,7 +219,7 @@
                 const opt = document.createElement('option');
                 opt.value = index;
                 opt.textContent = prod.name;
-                if (index === 5) opt.selected = true;
+                if (index === 7) opt.selected = true; // Select Merged by default
                 animProductSelect.appendChild(opt);
             });
 
@@ -230,6 +232,7 @@
                     <div class="p-3 space-y-4">`;
                 
                 PRODUCTS.forEach(prod => {
+                    if (prod.channel === "ALL") return;
                     html += `<div>
                         <div class="text-xs font-semibold text-slate-600 mb-1.5 flex justify-between">
                             <span>${prod.name}</span>
@@ -279,6 +282,7 @@
             const doyPadded = String(doy).padStart(3, '0');
 
             PRODUCTS.forEach(p => {
+                if (p.channel === "ALL") return;
                 const el = document.getElementById(`results-${domainId}-${p.channel}-${p.code}`);
                 if(el) el.innerHTML = '<span class="text-slate-400 font-medium text-blue-500 animate-pulse">Scanning S3...</span>';
             });
@@ -310,6 +314,7 @@
             await Promise.all(fetchPromises);
 
             PRODUCTS.forEach(p => {
+                if (p.channel === "ALL") return;
                 const el = document.getElementById(`results-${domainId}-${p.channel}-${p.code}`);
                 if(el) el.innerHTML = '';
             });
@@ -352,6 +357,7 @@
             });
 
             PRODUCTS.forEach(p => {
+                if (p.channel === "ALL") return;
                 const el = document.getElementById(`results-${domainId}-${p.channel}-${p.code}`);
                 if(el && el.innerHTML === '') {
                     el.innerHTML = '<span class="text-slate-400 italic">No files available</span>';
@@ -424,8 +430,8 @@
             document.getElementById('btnLoadAnim').textContent = "Scanning...";
 
             const prefixDomain = domainId.startsWith('M') ? 'M' : domainId;
-            const pCode = product.code;
-            const searchPrefix = `${pCode}${prefixDomain}`;
+            const isMerged = product.channel === "ALL";
+            const searchPrefixes = isMerged ? [`ABI-L2-DMW${prefixDomain}`, `ABI-L2-DMWV${prefixDomain}`] : [`${product.code}${prefixDomain}`];
 
             const fetchPromises = [];
             let currentHour = new Date(startDate);
@@ -438,23 +444,24 @@
                 const doyPadded = String(doy).padStart(3, '0');
                 const hourPadded = String(currentHour.getUTCHours()).padStart(2, '0');
 
-                const fullPrefix = `${searchPrefix}/${year}/${doyPadded}/${hourPadded}/`;
-                const url = `https://${bucket}.s3.amazonaws.com/?list-type=2&prefix=${fullPrefix}`;
-
-                fetchPromises.push(
-                    fetch(url).then(async response => {
-                        if (response.ok) {
-                            const text = await response.text();
-                            const xml = new DOMParser().parseFromString(text, "application/xml");
-                            return Array.from(xml.getElementsByTagName('Key')).map(n => n.textContent);
-                        }
-                        return [];
-                    }).catch(e => {
-                        console.error("Error fetching " + url, e);
-                        return [];
-                    })
-                );
-
+                for (const prefix of searchPrefixes) {
+                    const fullPrefix = `${prefix}/${year}/${doyPadded}/${hourPadded}/`;
+                    const url = `https://${bucket}.s3.amazonaws.com/?list-type=2&prefix=${fullPrefix}`;
+                    
+                    fetchPromises.push(
+                        fetch(url).then(async response => {
+                            if (response.ok) {
+                                const text = await response.text();
+                                const xml = new DOMParser().parseFromString(text, "application/xml");
+                                return Array.from(xml.getElementsByTagName('Key')).map(n => n.textContent);
+                            }
+                            return [];
+                        }).catch(e => {
+                            console.error("Error fetching " + url, e);
+                            return [];
+                        })
+                    );
+                }
                 currentHour.setUTCHours(currentHour.getUTCHours() + 1);
             }
 
@@ -463,7 +470,8 @@
 
             keysFound = keysFound.filter(key => {
                 const filename = key.split('/').pop();
-                if (domainId.startsWith('M') && !filename.includes(`${pCode}${domainId}-`)) return false;
+                if (domainId.startsWith('M') && !filename.includes(`DMW`)) return false;
+                if (domainId.startsWith('M') && !filename.includes(`${domainId}-`)) return false;
                 
                 let pChan = null;
                 if (filename.includes("C02_") || filename.includes("-C02_") || filename.includes("C02_")) pChan = "C02";
@@ -473,7 +481,7 @@
                 else if (filename.includes("C10_") || filename.includes("-C10_") || filename.includes("C10_")) pChan = "C10";
                 else if (filename.includes("C14_") || filename.includes("-C14_") || filename.includes("C14_")) pChan = "C14";
 
-                if (pChan !== product.channel) return false;
+                if (!isMerged && pChan !== product.channel) return false;
 
                 const timeMatch = filename.match(/_s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})/);
                 if (!timeMatch) return false;
@@ -501,10 +509,29 @@
                 return;
             }
 
-            const urls = keysFound.map(key => `https://${bucket}.s3.amazonaws.com/${key}`);
-            const filenames = keysFound.map(key => key.split('/').pop());
+            let groupedUrls = [];
+            let groupedFilenames = [];
+            
+            if (isMerged) {
+                const groups = {};
+                keysFound.forEach(key => {
+                    const filename = key.split('/').pop();
+                    const match = filename.match(/_s(\d{4}\d{3}\d{4})/); // match up to exact minute
+                    if (match) {
+                        const timeKey = match[1];
+                        if (!groups[timeKey]) groups[timeKey] = [];
+                        groups[timeKey].push(key);
+                    }
+                });
+                const sortedTimes = Object.keys(groups).sort();
+                groupedUrls = sortedTimes.map(t => groups[t].map(k => `https://${bucket}.s3.amazonaws.com/${k}`));
+                groupedFilenames = sortedTimes.map(t => groups[t].map(k => k.split('/').pop()));
+            } else {
+                groupedUrls = keysFound.map(key => [`https://${bucket}.s3.amazonaws.com/${key}`]);
+                groupedFilenames = keysFound.map(key => [key.split('/').pop()]);
+            }
 
-            window.dispatchEvent(new CustomEvent('load-dmw-anim', { detail: { urls, filenames, domainName } }));
+            window.dispatchEvent(new CustomEvent('load-dmw-anim', { detail: { urls: groupedUrls, filenames: groupedFilenames, domainName, isMerged } }));
         };
 
         document.getElementById('mobile-menu-btn').onclick = () => {
@@ -603,6 +630,15 @@
             }
             return out;
         };
+        
+        const concatArrays = (a, b) => {
+            if (!a || a.length === 0) return b;
+            if (!b || b.length === 0) return a;
+            const c = new Float32Array(a.length + b.length);
+            c.set(a, 0);
+            c.set(b, a.length);
+            return c;
+        };
 
         // Math Helpers Ported from core/wind.py
         function spddir_to_uv(wspd, wdir) {
@@ -631,6 +667,14 @@
             }
             return 'rgba(255,0,0,0.8)';
         }
+        
+        // Color mapping for pressure levels (Merged View)
+        function getPressureColor(p) {
+            if (!p || isNaN(p)) return 'rgba(255,255,255,0.8)';
+            if (p < 400) return 'rgba(255,0,0,0.9)'; // High level
+            if (p >= 400 && p <= 700) return 'rgba(0,255,255,0.9)'; // Mid level
+            return 'rgba(255,255,0,0.9)'; // Low level
+        }
 
         function DMWView({ layer, coastlineData, onClose }) {
             const containerRef = useRef(null);
@@ -640,7 +684,7 @@
             const [currentFrame, setCurrentFrame] = useState(0);
             const [isPlaying, setIsPlaying] = useState(false);
             const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-            const [settings, setSettings] = useState({ minSpeed: 5, barbSpacing: 1, showCoast: true });
+            const [settings, setSettings] = useState({ minSpeed: 5, barbSpacing: layer.isMerged ? 2 : 1, showCoast: true, showHeatmap: layer.isMerged || false });
             const [showSettings, setShowSettings] = useState(false);
             const [isClosing, setIsClosing] = useState(false);
             const [localMinSpeed, setLocalMinSpeed] = useState(settings.minSpeed);
@@ -707,11 +751,11 @@
                 let mxSpd = 0;
 
                 for (let fIdx = 0; fIdx < framesData.length; fIdx++) {
-                    const { lat, lon, wspd, wdir, dqf } = framesData[fIdx].data;
+                    const { lat, lon, wspd, wdir, dqf, pressure } = framesData[fIdx].data;
                     const pts = [];
 
                     for (let i=0; i<lat.length; i++) {
-                        const lt = lat[i], ln = lon[i], s = wspd[i], d = wdir[i];
+                        const lt = lat[i], ln = lon[i], s = wspd[i], d = wdir[i], p = pressure ? pressure[i] : NaN;
                         const q = dqf ? dqf[i] : 0;
                         
                         if (q === 0 && !isNaN(lt) && !isNaN(ln) && !isNaN(s) && !isNaN(d) && 
@@ -723,7 +767,7 @@
                             }
                             if (s > mxSpd) mxSpd = s;
                             
-                            pts.push({ lat: lt, lon: nLn, spd: s, dir: d });
+                            pts.push({ lat: lt, lon: nLn, spd: s, dir: d, p: p });
                             
                             if (lt < minLat) minLat = lt;
                             if (lt > maxLat) maxLat = lt;
@@ -731,6 +775,12 @@
                             if (nLn > maxLon) maxLon = nLn;
                         }
                     }
+                    
+                    if (layer.isMerged) {
+                        // Sort by pressure descending, so high altitude (low pressure, red) draws last and remains visible
+                        pts.sort((a, b) => b.p - a.p);
+                    }
+                    
                     allPts.push(pts);
                 }
                 
@@ -738,7 +788,7 @@
                     layerInitRef.current = layer.id;
                     if (allPts.length > 0) {
                         const firstFramePts = allPts[0].length;
-                        const targetPts = 10000;
+                        const targetPts = layer.isMerged ? 25000 : 10000;
                         if (firstFramePts > targetPts) {
                             const autoSkip = Math.ceil(firstFramePts / targetPts);
                             setSettings(s => ({ ...s, barbSpacing: autoSkip }));
@@ -771,7 +821,7 @@
                 }
 
                 renderOffscreen();
-            }, [layer, settings.minSpeed, settings.barbSpacing, settings.showCoast, coastlineData]);
+            }, [layer, settings.minSpeed, settings.barbSpacing, settings.showCoast, settings.showHeatmap, coastlineData]);
 
             // Draw to high-res offscreen canvas
             const renderOffscreen = useCallback(() => {
@@ -794,6 +844,65 @@
                     ctx.scale(scaleRes, scaleRes);
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
+
+                    const pts = pointClouds.current[fIdx];
+                    
+                    // Render Shear Heatmap (Calculated live based on raw point cloud binning)
+                    if (settings.showHeatmap && layer.isMerged) {
+                        const gridRes = 0.5; // Spatial grid size in degrees
+                        const grid = {};
+                        
+                        // Fast Binning
+                        for(let i=0; i<pts.length; i++) {
+                            const pt = pts[i];
+                            if (pt.spd < settings.minSpeed || isNaN(pt.p)) continue;
+                            const gX = Math.floor(pt.lon / gridRes);
+                            const gY = Math.floor(pt.lat / gridRes);
+                            const key = `${gX}_${gY}`;
+                            if (!grid[key]) grid[key] = [];
+                            grid[key].push(pt);
+                        }
+                        
+                        const maxExpectedShear = 40; // m/s delta over column
+                        for (const key in grid) {
+                            const cellPts = grid[key];
+                            if (cellPts.length < 2) continue;
+                            
+                            let minP = 1100, maxP = 0;
+                            let minPPt = null, maxPPt = null;
+                            for (const pt of cellPts) {
+                                if (pt.p < minP) { minP = pt.p; minPPt = pt; }
+                                if (pt.p > maxP) { maxP = pt.p; maxPPt = pt; }
+                            }
+                            
+                            // Detect deep layer vertical shear (requires significant delta-p)
+                            if (maxP - minP > 150 && minPPt && maxPPt) {
+                                const { u: u1, v: v1 } = spddir_to_uv(minPPt.spd, minPPt.dir);
+                                const { u: u2, v: v2 } = spddir_to_uv(maxPPt.spd, maxPPt.dir);
+                                
+                                const shearMag = Math.sqrt(Math.pow(u1-u2, 2) + Math.pow(v1-v2, 2));
+                                
+                                const [gX, gY] = key.split('_').map(Number);
+                                const cellLon = gX * gridRes;
+                                const cellLat = gY * gridRes;
+                                
+                                const tl = proj(cellLat + gridRes, cellLon); // top left (larger lat)
+                                const br = proj(cellLat, cellLon + gridRes); // bottom right (smaller lat)
+                                
+                                const w = br.x - tl.x;
+                                const h = br.y - tl.y;
+                                
+                                const t = Math.max(0, Math.min(1, shearMag / maxExpectedShear));
+                                let color;
+                                if (t < 0.33) color = `rgba(0, 0, ${Math.floor(255*(t/0.33))}, 0.5)`; // black -> blue
+                                else if (t < 0.66) color = `rgba(${Math.floor(255*((t-0.33)/0.33))}, 0, 255, 0.5)`; // blue -> purple
+                                else color = `rgba(255, 0, ${Math.floor(255*(1 - (t-0.66)/0.34))}, 0.6)`; // purple -> red
+                                
+                                ctx.fillStyle = color;
+                                ctx.fillRect(tl.x, tl.y, w, h);
+                            }
+                        }
+                    }
 
                     // Coastlines
                     if (settings.showCoast && coastlineData) {
@@ -830,7 +939,6 @@
                     }
 
                     // Vectors
-                    const pts = pointClouds.current[fIdx];
                     const step = Math.max(1, settings.barbSpacing);
                     const maxPlotSpd = maxSpd.current;
 
@@ -848,7 +956,7 @@
                         ctx.translate(pos.x, pos.y);
                         ctx.rotate(angle);
                         
-                        const barbColor = getDynamicColor(pt.spd, 0, maxPlotSpd);
+                        const barbColor = layer.isMerged ? getPressureColor(pt.p) : getDynamicColor(pt.spd, 0, maxPlotSpd);
                         ctx.strokeStyle = barbColor;
                         ctx.fillStyle = barbColor;
                         ctx.lineWidth = 1.0;
@@ -1112,17 +1220,41 @@
                                     <label style={{marginTop:'10px', justifyContent:'flex-start', cursor:'pointer'}}>
                                         <input type="checkbox" checked={settings.showCoast} onChange={e => setSettings(s => ({...s, showCoast: e.target.checked}))} style={{marginRight:'8px'}}/> Coastlines
                                     </label>
+                                    
+                                    {layer.isMerged && (
+                                        <label style={{marginTop:'10px', justifyContent:'flex-start', cursor:'pointer'}}>
+                                            <input type="checkbox" checked={settings.showHeatmap} onChange={e => setSettings(s => ({...s, showHeatmap: e.target.checked}))} style={{marginRight:'8px'}}/> Show Shear Heatmap
+                                        </label>
+                                    )}
 
                                     <button className="btn-sm" onClick={handleExport} style={{marginTop: '15px'}}>Export View (PNG)</button>
                                 </div>
                             )}
                         </div>
                         
-                        <div id="legend-container">
-                            <div style={{fontSize:'10px', textAlign:'center', marginBottom:'4px'}}>WIND SPEED (m/s)</div>
-                            <div id="legend"></div>
-                            <div id="legend-labels"><span>0</span><span>{Math.round(maxSpd.current)}</span></div>
-                        </div>
+                        {layer.isMerged ? (
+                            <div id="legend-container" style={{width: '240px'}}>
+                                <div style={{fontSize:'10px', textAlign:'center', marginBottom:'4px', fontWeight:'bold'}}>WIND ALTITUDE (hPa)</div>
+                                <div style={{display:'flex', justifyContent:'space-between', marginBottom:'10px', fontSize:'9px', fontWeight:'bold', textShadow:'1px 1px 1px #000'}}>
+                                    <span style={{color:'rgba(255,0,0,0.9)'}}>High (&lt;400)</span>
+                                    <span style={{color:'rgba(0,255,255,0.9)'}}>Mid (400-700)</span>
+                                    <span style={{color:'rgba(255,255,0,0.9)'}}>Low (&gt;700)</span>
+                                </div>
+                                {settings.showHeatmap && (
+                                    <>
+                                        <div style={{fontSize:'10px', textAlign:'center', marginBottom:'4px', fontWeight:'bold', borderTop:'1px solid #444', paddingTop:'6px'}}>VERTICAL SHEAR (m/s)</div>
+                                        <div style={{height: '12px', background: 'linear-gradient(to right, rgba(0,0,0,0.5), rgba(0,0,255,0.5), rgba(255,0,255,0.5), rgba(255,0,0,0.6))', borderRadius: '2px'}}></div>
+                                        <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginTop: '5px', fontFamily: 'monospace'}}><span>0</span><span>40+</span></div>
+                                    </>
+                                )}
+                            </div>
+                        ) : (
+                            <div id="legend-container">
+                                <div style={{fontSize:'10px', textAlign:'center', marginBottom:'4px'}}>WIND SPEED (m/s)</div>
+                                <div id="legend"></div>
+                                <div id="legend-labels"><span>0</span><span>{Math.round(maxSpd.current)}</span></div>
+                            </div>
+                        )}
                     </div>
                     
                     {layer.isAnimation && (
@@ -1200,7 +1332,7 @@
 
             useEffect(() => {
                 const handleLoadNetcdf = (e) => fetchFileUrl(e.detail.url, e.detail.filename);
-                const handleLoadAnim = (e) => fetchAnimSequence(e.detail.urls, e.detail.filenames, e.detail.domainName);
+                const handleLoadAnim = (e) => fetchAnimSequence(e.detail.urls, e.detail.filenames, e.detail.domainName, e.detail.isMerged);
                 
                 window.addEventListener('load-dmw', handleLoadNetcdf);
                 window.addEventListener('load-dmw-anim', handleLoadAnim);
@@ -1224,105 +1356,104 @@
                 setLoading(false);
             };
 
-            const fetchAnimSequence = async (urls, filenames, domainName) => {
+            const fetchAnimSequence = async (groupedUrls, groupedFilenames, domainName, isMerged) => {
                 setAnimProgress(0);
                 try {
-                    // Load latest image first
-                    const lastIdx = urls.length - 1;
-                    const res = await fetch(urls[lastIdx]);
-                    const buf = await res.arrayBuffer();
-                    const baseLayerId = await handleUpload(buf, filenames[lastIdx]);
-
                     const frames = [];
-                    for (let i = 0; i < urls.length; i++) {
-                        setAnimProgress(Math.round(((i) / urls.length) * 100));
-                        const response = await fetch(urls[i]);
-                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                        const buffer = await response.arrayBuffer();
+                    for (let i = 0; i < groupedUrls.length; i++) {
+                        setAnimProgress(Math.round(((i) / groupedUrls.length) * 100));
                         
-                        const id = `f${Date.now()}_${i}`;
-                        h5wasm.FS.writeFile(id, new Uint8Array(buffer));
-                        const f = new h5wasm.File(id, 'r');
-                        const root = f.get('/');
+                        const urls = groupedUrls[i];
+                        const names = groupedFilenames[i];
                         
-                        const latVar = findVar(h5wasm, root, 'lat');
-                        const lonVar = findVar(h5wasm, root, 'lon');
-                        const wspdVar = findVar(h5wasm, root, 'wind_speed');
-                        const wdirVar = findVar(h5wasm, root, 'wind_direction');
+                        let mergedLat = [], mergedLon = [], mergedWspd = [], mergedWdir = [], mergedDqf = [], mergedPressure = [];
+                        
+                        for (let j = 0; j < urls.length; j++) {
+                            const response = await fetch(urls[j]).catch(() => null);
+                            if (!response || !response.ok) continue;
+                            const buffer = await response.arrayBuffer();
+                            
+                            const id = `f${Date.now()}_${i}_${j}`;
+                            h5wasm.FS.writeFile(id, new Uint8Array(buffer));
+                            const f = new h5wasm.File(id, 'r');
+                            const root = f.get('/');
+                            
+                            const latVar = findVar(h5wasm, root, 'lat');
+                            const lonVar = findVar(h5wasm, root, 'lon');
+                            const wspdVar = findVar(h5wasm, root, 'wind_speed');
+                            const wdirVar = findVar(h5wasm, root, 'wind_direction');
+                            
+                            if (latVar && lonVar && wspdVar && wdirVar) {
+                                const lat = unpack(latVar, false);
+                                const lon = unpack(lonVar, false);
+                                const wspd = unpack(wspdVar, true);
+                                const wdir = unpack(wdirVar, true);
+                                
+                                const dqfVar = findVar(h5wasm, root, 'DQF');
+                                const dqf = dqfVar ? unpack(dqfVar, false) : new Float32Array(lat.length).fill(0);
+                                
+                                const pressureVar = findVar(h5wasm, root, 'pressure');
+                                const pressure = pressureVar ? unpack(pressureVar, true) : new Float32Array(lat.length).fill(NaN);
 
-                        if (!latVar || !lonVar || !wspdVar || !wdirVar) {
+                                mergedLat = concatArrays(mergedLat, lat);
+                                mergedLon = concatArrays(mergedLon, lon);
+                                mergedWspd = concatArrays(mergedWspd, wspd);
+                                mergedWdir = concatArrays(mergedWdir, wdir);
+                                mergedDqf = concatArrays(mergedDqf, dqf);
+                                mergedPressure = concatArrays(mergedPressure, pressure);
+                            }
+                            
                             f.close();
                             h5wasm.FS.unlink(id);
-                            continue;
                         }
-
-                        const lat = unpack(latVar, false);
-                        const lon = unpack(lonVar, false);
-                        const wspd = unpack(wspdVar, true);
-                        const wdir = unpack(wdirVar, true);
-                        const dqfVar = findVar(h5wasm, root, 'DQF');
-                        const dqf = dqfVar ? unpack(dqfVar, false) : null;
-
-                        frames.push({
-                            filename: filenames[i],
-                            data: { lat, lon, wspd, wdir, dqf }
-                        });
                         
-                        f.close();
-                        h5wasm.FS.unlink(id);
+                        if (mergedLat.length > 0) {
+                            frames.push({
+                                filename: names[0],
+                                data: { lat: mergedLat, lon: mergedLon, wspd: mergedWspd, wdir: mergedWdir, dqf: mergedDqf, pressure: mergedPressure }
+                            });
+                        }
                     }
                     
                     setAnimProgress(100);
                     setTimeout(() => setAnimProgress(null), 500);
                     
-                    let timeRangeStr = "";
-                    const d1 = parseFullDateFromFilename(filenames[0]);
-                    const d2 = parseFullDateFromFilename(filenames[filenames.length - 1]);
-                    if (d1 && d2) {
-                        const m1 = String(d1.getUTCMonth() + 1).padStart(2, '0');
-                        const day1 = String(d1.getUTCDate()).padStart(2, '0');
-                        const h1 = String(d1.getUTCHours()).padStart(2, '0');
-                        const min1 = String(d1.getUTCMinutes()).padStart(2, '0');
-                        
-                        const m2 = String(d2.getUTCMonth() + 1).padStart(2, '0');
-                        const day2 = String(d2.getUTCDate()).padStart(2, '0');
-                        const h2 = String(d2.getUTCHours()).padStart(2, '0');
-                        const min2 = String(d2.getUTCMinutes()).padStart(2, '0');
-                        
-                        if (d1.getUTCDate() === d2.getUTCDate() && d1.getUTCMonth() === d2.getUTCMonth()) {
-                            timeRangeStr = `${m1}-${day1} ${h1}:${min1} - ${h2}:${min2}`;
-                        } else {
-                            timeRangeStr = `${m1}-${day1} ${h1}:${min1} - ${m2}-${day2} ${h2}:${min2}`;
-                        }
-                    }
-                    
                     if (frames.length > 0) {
-                        if (baseLayerId) {
-                            setLayers(prev => prev.map(l => {
-                                if (l.id === baseLayerId) {
-                                    return {
-                                        ...l,
-                                        isAnimation: true,
-                                        frames: frames,
-                                        name: `${domainName} Animation`,
-                                        title: `${domainName} Animation Sequence`,
-                                        timeRangeStr: timeRangeStr
-                                    };
-                                }
-                                return l;
-                            }));
-                        } else {
-                            const layerId = `anim_${Date.now()}`;
-                            const layer = {
-                                id: layerId,
-                                name: `${domainName} Animation`,
-                                title: `${domainName} Animation Sequence`,
-                                isAnimation: true,
-                                frames: frames,
-                                timeRangeStr: timeRangeStr
-                            };
-                            setLayers(prev => [...prev, layer]);
+                        let timeRangeStr = "";
+                        const d1 = parseFullDateFromFilename(frames[0].filename);
+                        const d2 = parseFullDateFromFilename(frames[frames.length - 1].filename);
+                        if (d1 && d2) {
+                            const m1 = String(d1.getUTCMonth() + 1).padStart(2, '0');
+                            const day1 = String(d1.getUTCDate()).padStart(2, '0');
+                            const h1 = String(d1.getUTCHours()).padStart(2, '0');
+                            const min1 = String(d1.getUTCMinutes()).padStart(2, '0');
+                            
+                            const m2 = String(d2.getUTCMonth() + 1).padStart(2, '0');
+                            const day2 = String(d2.getUTCDate()).padStart(2, '0');
+                            const h2 = String(d2.getUTCHours()).padStart(2, '0');
+                            const min2 = String(d2.getUTCMinutes()).padStart(2, '0');
+                            
+                            if (d1.getUTCDate() === d2.getUTCDate() && d1.getUTCMonth() === d2.getUTCMonth()) {
+                                timeRangeStr = `${m1}-${day1} ${h1}:${min1} - ${h2}:${min2}`;
+                            } else {
+                                timeRangeStr = `${m1}-${day1} ${h1}:${min1} - ${m2}-${day2} ${h2}:${min2}`;
+                            }
                         }
+                        
+                        const layerId = `anim_${Date.now()}`;
+                        const layer = {
+                            id: layerId,
+                            name: isMerged ? `${domainName} Merged View` : `${domainName} Animation`,
+                            title: isMerged ? `${domainName} Merged Channels & Shear` : `${domainName} Animation Sequence`,
+                            isAnimation: true,
+                            isMerged: isMerged,
+                            frames: frames,
+                            timeRangeStr: timeRangeStr
+                        };
+                        setLayers(prev => [...prev, layer]);
+                        setActiveLayerId(layerId);
+                    } else {
+                        notifier.error("No valid data found in sequence.");
                     }
                 } catch (error) {
                     setAnimProgress(null);
@@ -1352,8 +1483,12 @@
                     const lon = unpack(lonVar, false);
                     const wspd = unpack(wspdVar, true);
                     const wdir = unpack(wdirVar, true);
+                    
                     const dqfVar = findVar(h5wasm, root, 'DQF');
                     const dqf = dqfVar ? unpack(dqfVar, false) : null;
+                    
+                    const pressureVar = findVar(h5wasm, root, 'pressure');
+                    const pressure = pressureVar ? unpack(pressureVar, true) : null;
 
                     // Parse a cleaner name
                     let domainStr = "Image";
@@ -1376,7 +1511,7 @@
 
                     const layer = {
                         id, name: niceName, title: name, timeRangeStr: timeRangeStr,
-                        data: { lat, lon, wspd, wdir, dqf },
+                        data: { lat, lon, wspd, wdir, dqf, pressure },
                         globalAttrs: extractAttributes(root)
                     };
                     
