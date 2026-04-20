@@ -51,11 +51,12 @@
 
         /* --- Sandbox Specific Styles --- */
         .main-layout { display: flex; height: 100%; }
-        .content-grid { flex-grow: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(600px, 1fr)); gap: 8px; padding: 8px; background-color: #e9ecef; overflow-y: auto; }
-        .view-container { display: flex; flex-direction: column; background-color: #495057; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); overflow: hidden; height: 100%; min-height: 400px; position: relative; }
+        .content-grid { flex-grow: 1; background-color: #e9ecef; overflow-y: auto; }
+        .view-container { display: flex; flex-direction: column; background-color: #495057; border-radius: 0 8px 8px 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); overflow: hidden; height: 100%; min-height: 400px; position: relative; z-index: 5; }
         .view-header { background-color: #343a40; color: white; padding: 6px 12px; font-size: 0.9rem; font-weight: bold; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
         .view-canvas-wrapper { flex-grow: 1; position: relative; overflow: hidden; background: #111; cursor: grab; touch-action: none; }
         .view-canvas-wrapper:active { cursor: grabbing; }
+        .view-status-bar { background-color: #1e293b; color: white; padding: 6px 12px; display: flex; align-items: center; gap: 12px; border-top: 1px solid #334155; font-size: 12px; z-index: 10; flex-shrink: 0; }
         .loading-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.75); color: white; display: flex; justify-content: center; align-items: center; z-index: 2000; }
         .notification-container { position: fixed; bottom: 20px; right: 20px; z-index: 4000; display: flex; flex-direction: column; gap: 10px; }
         .notification-toast { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-radius: 5px; color: #fff; box-shadow: 0 3px 10px rgba(0,0,0,0.2); min-width: 250px; }
@@ -516,6 +517,23 @@
         
         const { useState, useEffect, useCallback, useRef, createContext, useContext } = React;
 
+        // Shared Filename Parsing Utility
+        function parseFullDateFromFilename(filename) {
+            if (!filename) return null;
+            const match = filename.match(/_s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})/);
+            if (match) {
+                const year = parseInt(match[1]);
+                const doy = parseInt(match[2]);
+                const hour = parseInt(match[3]);
+                const min = parseInt(match[4]);
+                const date = new Date(Date.UTC(year, 0, 1));
+                date.setUTCDate(doy);
+                date.setUTCHours(hour, min, 0, 0);
+                return date;
+            }
+            return null;
+        }
+
         const NotificationContext = createContext();
         const useNotifier = () => useContext(NotificationContext);
         const NotificationProvider = ({ children }) => {
@@ -724,7 +742,7 @@
                 // Center projection initially
                 if (containerRef.current) {
                     const { clientWidth, clientHeight } = containerRef.current;
-                    const scale = Math.min(clientWidth / projRef.current.width, clientHeight / projRef.current.height) * 0.95;
+                    const scale = Math.min(clientWidth / projRef.current.width, clientHeight / projRef.current.height) * 0.8;
                     const x = (clientWidth - projRef.current.width * scale) / 2;
                     const y = (clientHeight - projRef.current.height * scale) / 2;
                     setTransform({ x, y, scale });
@@ -885,13 +903,25 @@
                 ctx.drawImage(frameToDraw, 0, 0, width, height);
                 ctx.restore();
 
-                // Draw frame text
-                if (layer.isAnimation && layer.frames[currentFrame]) {
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                    ctx.fillRect(10, viewDiv.clientHeight - 30, 300, 25);
-                    ctx.fillStyle = 'white';
-                    ctx.font = '12px monospace';
-                    ctx.fillText(layer.frames[currentFrame].filename, 15, viewDiv.clientHeight - 12);
+                // Draw Parsed Time (Bottom Left Corner)
+                const frameData = layer.isAnimation ? layer.frames[currentFrame] : layer;
+                const fname = frameData ? (frameData.filename || frameData.name) : '';
+                if (fname) {
+                    const dateObj = parseFullDateFromFilename(fname);
+                    let timeStr = fname;
+                    if (dateObj) {
+                        const yyyy = dateObj.getUTCFullYear();
+                        const mm = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+                        const dd = String(dateObj.getUTCDate()).padStart(2, '0');
+                        const hh = String(dateObj.getUTCHours()).padStart(2, '0');
+                        const min = String(dateObj.getUTCMinutes()).padStart(2, '0');
+                        timeStr = `${yyyy}-${mm}-${dd} ${hh}:${min} UTC`;
+                    }
+                    ctx.fillStyle = '#000000';
+                    ctx.fillRect(0, viewDiv.clientHeight - 35, 230, 35);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 16px monospace';
+                    ctx.fillText(timeStr, 10, viewDiv.clientHeight - 12);
                 }
             }, [transform, currentFrame, layer]);
 
@@ -975,6 +1005,25 @@
                 }
             };
 
+            let statusTimeStr = "";
+            if (layer) {
+                const frameData = layer.isAnimation ? layer.frames[currentFrame] : layer;
+                const fname = frameData ? (frameData.filename || frameData.name) : '';
+                if (fname) {
+                    const dateObj = parseFullDateFromFilename(fname);
+                    if (dateObj) {
+                        const yyyy = dateObj.getUTCFullYear();
+                        const mm = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+                        const dd = String(dateObj.getUTCDate()).padStart(2, '0');
+                        const hh = String(dateObj.getUTCHours()).padStart(2, '0');
+                        const min = String(dateObj.getUTCMinutes()).padStart(2, '0');
+                        statusTimeStr = `${yyyy}-${mm}-${dd} ${hh}:${min} UTC`;
+                    } else {
+                        statusTimeStr = fname;
+                    }
+                }
+            }
+
             return (
                 <div className="view-container">
                     <div className="view-header">
@@ -1000,22 +1049,6 @@
                                     <label style={{marginTop:'10px', justifyContent:'flex-start', cursor:'pointer'}}>
                                         <input type="checkbox" checked={settings.showCoast} onChange={e => setSettings(s => ({...s, showCoast: e.target.checked}))} style={{marginRight:'8px'}}/> Coastlines
                                     </label>
-                                    
-                                    {layer.isAnimation && (
-                                        <div style={{marginTop: '15px', borderTop: '1px solid #444', paddingTop: '10px'}}>
-                                            <h4>Animation</h4>
-                                            <div style={{display:'flex', gap:'5px', marginBottom:'5px'}}>
-                                                <button className="btn-sm" onClick={() => setIsPlaying(!isPlaying)} style={{margin:0, flex:1}}>
-                                                    {isPlaying ? 'Pause' : 'Play'}
-                                                </button>
-                                            </div>
-                                            <input type="range" min="0" max={Math.max(0, (layer.frames?.length || 1) - 1)} value={currentFrame} onChange={e => {
-                                                setIsPlaying(false);
-                                                setCurrentFrame(parseInt(e.target.value));
-                                            }} style={{width: '100%'}} />
-                                            <div style={{textAlign:'center', fontSize:'10px', marginTop:'2px'}}>Frame {currentFrame + 1} / {layer.frames?.length}</div>
-                                        </div>
-                                    )}
 
                                     <button className="btn-sm" onClick={handleExport} style={{marginTop: '15px'}}>Export View (PNG)</button>
                                 </div>
@@ -1028,6 +1061,21 @@
                             <div id="legend-labels"><span>0</span><span>{Math.round(maxSpd.current)}</span></div>
                         </div>
                     </div>
+                    
+                    {layer.isAnimation && (
+                        <div className="view-status-bar">
+                            <button onClick={() => setIsPlaying(!isPlaying)} style={{ background: '#4db8ff', color: '#000', border: 'none', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', minWidth: '65px' }}>
+                                {isPlaying ? 'Pause' : 'Play'}
+                            </button>
+                            <input type="range" min="0" max={Math.max(0, (layer.frames?.length || 1) - 1)} value={currentFrame} onChange={e => {
+                                setIsPlaying(false);
+                                setCurrentFrame(parseInt(e.target.value));
+                            }} style={{ flexGrow: 1, cursor: 'pointer' }} />
+                            <div style={{ fontWeight: 'bold', minWidth: '150px', textAlign: 'right', fontFamily: 'monospace' }}>
+                                {statusTimeStr}
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -1040,7 +1088,6 @@
             const [loading, setLoading] = useState(false);
             const [coastline, setCoastline] = useState(null);
             const [animProgress, setAnimProgress] = useState(null);
-            const [showBigPlay, setShowBigPlay] = useState(null);
 
             useEffect(() => {
                 h5wasm.ready.then(() => setReady(true));
@@ -1165,6 +1212,27 @@
                     setAnimProgress(100);
                     setTimeout(() => setAnimProgress(null), 500);
                     
+                    let timeRangeStr = "";
+                    const d1 = parseFullDateFromFilename(filenames[0]);
+                    const d2 = parseFullDateFromFilename(filenames[filenames.length - 1]);
+                    if (d1 && d2) {
+                        const m1 = String(d1.getUTCMonth() + 1).padStart(2, '0');
+                        const day1 = String(d1.getUTCDate()).padStart(2, '0');
+                        const h1 = String(d1.getUTCHours()).padStart(2, '0');
+                        const min1 = String(d1.getUTCMinutes()).padStart(2, '0');
+                        
+                        const m2 = String(d2.getUTCMonth() + 1).padStart(2, '0');
+                        const day2 = String(d2.getUTCDate()).padStart(2, '0');
+                        const h2 = String(d2.getUTCHours()).padStart(2, '0');
+                        const min2 = String(d2.getUTCMinutes()).padStart(2, '0');
+                        
+                        if (d1.getUTCDate() === d2.getUTCDate() && d1.getUTCMonth() === d2.getUTCMonth()) {
+                            timeRangeStr = `${m1}-${day1} ${h1}:${min1} - ${h2}:${min2}`;
+                        } else {
+                            timeRangeStr = `${m1}-${day1} ${h1}:${min1} - ${m2}-${day2} ${h2}:${min2}`;
+                        }
+                    }
+                    
                     if (frames.length > 0) {
                         if (baseLayerId) {
                             setLayers(prev => prev.map(l => {
@@ -1174,12 +1242,12 @@
                                         isAnimation: true,
                                         frames: frames,
                                         name: `${domainName} Animation`,
-                                        title: `${domainName} Animation Sequence`
+                                        title: `${domainName} Animation Sequence`,
+                                        timeRangeStr: timeRangeStr
                                     };
                                 }
                                 return l;
                             }));
-                            setShowBigPlay(baseLayerId);
                         } else {
                             const layerId = `anim_${Date.now()}`;
                             const layer = {
@@ -1187,10 +1255,10 @@
                                 name: `${domainName} Animation`,
                                 title: `${domainName} Animation Sequence`,
                                 isAnimation: true,
-                                frames: frames
+                                frames: frames,
+                                timeRangeStr: timeRangeStr
                             };
                             setLayers(prev => [...prev, layer]);
-                            setShowBigPlay(layerId);
                         }
                     }
                 } catch (error) {
@@ -1224,8 +1292,27 @@
                     const dqfVar = findVar(h5wasm, root, 'DQF');
                     const dqf = dqfVar ? unpack(dqfVar, false) : null;
 
+                    // Parse a cleaner name
+                    let domainStr = "Image";
+                    if (name.includes('DMWF')) domainStr = "Full Disk";
+                    else if (name.includes('DMWC')) domainStr = "CONUS";
+                    else if (name.includes('DMWM1')) domainStr = "Meso 1";
+                    else if (name.includes('DMWM2')) domainStr = "Meso 2";
+                    
+                    const d1 = parseFullDateFromFilename(name);
+                    let timeRangeStr = "";
+                    let niceName = name;
+                    if (d1) {
+                        const m1 = String(d1.getUTCMonth() + 1).padStart(2, '0');
+                        const day1 = String(d1.getUTCDate()).padStart(2, '0');
+                        const h1 = String(d1.getUTCHours()).padStart(2, '0');
+                        const min1 = String(d1.getUTCMinutes()).padStart(2, '0');
+                        timeRangeStr = `${m1}-${day1} ${h1}:${min1}`;
+                        niceName = domainStr;
+                    }
+
                     const layer = {
-                        id, name, title: name,
+                        id, name: niceName, title: name, timeRangeStr: timeRangeStr,
                         data: { lat, lon, wspd, wdir, dqf },
                         globalAttrs: extractAttributes(root)
                     };
@@ -1258,28 +1345,37 @@
 
             return (
                 <div className="main-layout">
-                    <div className="content-grid" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <div className="content-grid" style={{ display: 'flex', flexDirection: 'column', gap: 0, padding: '15px 8px 8px 8px' }}>
                         {layers.length > 0 && (
-                            <div style={{ display: 'flex', gap: '4px', paddingBottom: '8px', overflowX: 'auto', flexShrink: 0 }}>
-                                {layers.map(l => (
-                                    <button 
-                                        key={l.id} 
-                                        onClick={() => setActiveLayerId(l.id)}
-                                        style={{
-                                            padding: '6px 12px',
-                                            backgroundColor: activeLayerId === l.id ? '#4db8ff' : '#6c757d',
-                                            color: activeLayerId === l.id ? '#000' : '#fff',
-                                            border: 'none',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer',
-                                            fontSize: '12px',
-                                            fontWeight: 'bold',
-                                            whiteSpace: 'nowrap'
-                                        }}
-                                    >
-                                        {l.name}
-                                    </button>
-                                ))}
+                            <div style={{ display: 'flex', paddingLeft: '110px', overflowX: 'auto', flexShrink: 0 }}>
+                                {layers.map(l => {
+                                    const isActive = activeLayerId === l.id;
+                                    return (
+                                        <button 
+                                            key={l.id} 
+                                            onClick={() => setActiveLayerId(l.id)}
+                                            style={{
+                                                padding: '8px 16px',
+                                                backgroundColor: isActive ? '#495057' : '#343a40',
+                                                color: isActive ? '#fff' : '#9ca3af',
+                                                border: 'none',
+                                                borderRadius: '8px 8px 0 0',
+                                                cursor: 'pointer',
+                                                fontSize: '13px',
+                                                fontWeight: isActive ? 'bold' : 'normal',
+                                                whiteSpace: 'nowrap',
+                                                marginRight: '2px',
+                                                position: 'relative',
+                                                paddingBottom: isActive ? '12px' : '8px',
+                                                marginBottom: isActive ? '-4px' : '0',
+                                                zIndex: isActive ? 10 : 1,
+                                                boxShadow: isActive ? '0 -2px 10px rgba(0,0,0,0.2)' : 'none'
+                                            }}
+                                        >
+                                            {l.name} {l.timeRangeStr ? `(${l.timeRangeStr})` : ''}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         )}
                         {layers.length === 0 ? (
@@ -1295,18 +1391,6 @@
                                 <div style={{color: 'white', marginBottom: '10px', fontSize: '14px', fontWeight: 'bold'}}>Loading Animation... {animProgress}%</div>
                                 <div style={{width: '100%', height: '10px', background: '#334155', borderRadius: '5px', overflow: 'hidden'}}>
                                     <div style={{width: `${animProgress}%`, height: '100%', background: '#22c55e', transition: 'width 0.2s'}}></div>
-                                </div>
-                            </div>
-                        )}
-                        
-                        {showBigPlay && (
-                            <div style={{position: 'absolute', top: '80px', left: '50%', transform: 'translateX(-50%)', zIndex: 3000, cursor: 'pointer'}} onClick={() => {
-                                setActiveLayerId(showBigPlay);
-                                setShowBigPlay(null);
-                                setTimeout(() => window.dispatchEvent(new CustomEvent('force-play')), 100);
-                            }}>
-                                <div style={{width: '90px', height: '90px', background: 'rgba(34, 197, 94, 0.9)', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', transition: 'transform 0.2s'}} onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
-                                    <div style={{width: 0, height: 0, borderTop: '20px solid transparent', borderBottom: '20px solid transparent', borderLeft: '32px solid white', marginLeft: '12px'}}></div>
                                 </div>
                             </div>
                         )}
