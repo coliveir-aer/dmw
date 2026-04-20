@@ -639,10 +639,25 @@
             const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
             const [settings, setSettings] = useState({ minSpeed: 5, barbSpacing: 1, showCoast: true });
             const [showSettings, setShowSettings] = useState(false);
+            const [isClosing, setIsClosing] = useState(false);
+            const [localMinSpeed, setLocalMinSpeed] = useState(settings.minSpeed);
+            const [localBarbSpacing, setLocalBarbSpacing] = useState(settings.barbSpacing);
             const layerInitRef = useRef(null);
             
             const isDragging = useRef(false);
             const lastPos = useRef({ x:0, y:0 });
+
+            useEffect(() => {
+                setLocalMinSpeed(settings.minSpeed);
+                setLocalBarbSpacing(settings.barbSpacing);
+            }, [settings.minSpeed, settings.barbSpacing]);
+
+            useEffect(() => {
+                const timer = setTimeout(() => {
+                    setSettings(s => ({ ...s, minSpeed: localMinSpeed, barbSpacing: localBarbSpacing }));
+                }, 300);
+                return () => clearTimeout(timer);
+            }, [localMinSpeed, localBarbSpacing]);
 
             useEffect(() => {
                 const handleForcePlay = () => setIsPlaying(true);
@@ -1045,11 +1060,13 @@
                 }
             }
 
+            if (isClosing) return null;
+
             return (
                 <div className="view-container">
                     <div className="view-header">
                         <span>{layer.title} - Derived Motion Winds</span>
-                        <button className="btn-sm btn-danger" style={{width:'auto', margin:0}} onClick={onClose}>Close</button>
+                        <button className="btn-sm btn-danger" style={{width:'auto', margin:0}} onClick={() => { setIsClosing(true); setTimeout(onClose, 0); }}>Close</button>
                     </div>
                     
                     <div className="view-canvas-wrapper" ref={containerRef} onMouseDown={handleMouse} onMouseMove={handleMouse} onMouseUp={handleMouse} onMouseLeave={handleMouse} onWheel={handleWheel} onTouchStart={handleTouch} onTouchMove={handleTouch} onTouchEnd={handleTouch} onTouchCancel={handleTouch}>
@@ -1061,11 +1078,19 @@
                             </div>
                             {showSettings && (
                                 <div style={{ marginTop: '10px' }}>
-                                    <label>Min Spd: <span>{settings.minSpeed}m/s</span></label>
-                                    <input type="range" min="0" max="30" value={settings.minSpeed} onChange={e => setSettings(s => ({...s, minSpeed: parseInt(e.target.value)}))} />
+                                    <label>Min Spd: <span>{localMinSpeed}m/s</span></label>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                        <button className="btn-sm" style={{ width: '25px', margin: 0 }} onClick={() => setLocalMinSpeed(Math.max(0, localMinSpeed - 1))}>-</button>
+                                        <input type="number" min="0" max="30" value={localMinSpeed} onChange={e => setLocalMinSpeed(parseInt(e.target.value) || 0)} style={{ width: '40px', background: '#333', color: 'white', border: '1px solid #555', textAlign: 'center', borderRadius: '3px', fontSize: '11px', padding: '2px 0' }} />
+                                        <button className="btn-sm" style={{ width: '25px', margin: 0 }} onClick={() => setLocalMinSpeed(localMinSpeed + 1)}>+</button>
+                                    </div>
                                     
-                                    <label style={{marginTop:'5px'}}>Skip Factor: <span>{settings.barbSpacing}</span></label>
-                                    <input type="range" min="1" max="50" value={settings.barbSpacing} onChange={e => setSettings(s => ({...s, barbSpacing: parseInt(e.target.value)}))} />
+                                    <label style={{marginTop:'5px'}}>Skip Factor: <span>{localBarbSpacing}</span></label>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                        <button className="btn-sm" style={{ width: '25px', margin: 0 }} onClick={() => setLocalBarbSpacing(Math.max(1, localBarbSpacing - 1))}>-</button>
+                                        <input type="number" min="1" max="50" value={localBarbSpacing} onChange={e => setLocalBarbSpacing(parseInt(e.target.value) || 1)} style={{ width: '40px', background: '#333', color: 'white', border: '1px solid #555', textAlign: 'center', borderRadius: '3px', fontSize: '11px', padding: '2px 0' }} />
+                                        <button className="btn-sm" style={{ width: '25px', margin: 0 }} onClick={() => setLocalBarbSpacing(localBarbSpacing + 1)}>+</button>
+                                    </div>
                                     
                                     <label style={{marginTop:'10px', justifyContent:'flex-start', cursor:'pointer'}}>
                                         <input type="checkbox" checked={settings.showCoast} onChange={e => setSettings(s => ({...s, showCoast: e.target.checked}))} style={{marginRight:'8px'}}/> Coastlines
