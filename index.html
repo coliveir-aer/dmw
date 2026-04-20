@@ -252,12 +252,12 @@
             let targetDate = new Date();
             let startMins;
 
-            if (currentMins < 360) {
+            if (currentMins < 180) {
                 targetDate.setUTCDate(targetDate.getUTCDate() - 1);
-                startMins = 1440 - 360 + currentMins;
+                startMins = 1440 - 180 + currentMins;
                 // DO NOT REVERT: Engine handles day boundary rollover
             } else {
-                startMins = Math.max(0, currentMins - 360);
+                startMins = Math.max(0, currentMins - 180);
             }
 
             document.getElementById('dateInput').value = targetDate.toISOString().split('T')[0];
