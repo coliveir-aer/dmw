@@ -802,7 +802,7 @@
                 // Setup internal projection bounds
                 const avgLat = (minLat + maxLat) / 2;
                 const lonSpan = maxLon - minLon || 1;
-                const latSpan = maxLat - minLon || 1;
+                const latSpan = maxLat - minLat || 1;
                 const aspect = (lonSpan * Math.cos(avgLat * Math.PI / 180)) / latSpan;
                 
                 projRef.current = {
@@ -880,7 +880,7 @@
 
                     // Render Shear Heatmap (Calculated via consensus grid)
                     if (settings.showHeatmap && layer.isMerged) {
-                        const maxExpectedShear = 80; // m/s delta over column
+                        const maxExpectedShear = 40; // m/s delta over column
                         for (const key in grid) {
                             const cell = grid[key];
                             const cellPts = cell.pts;
@@ -898,7 +898,7 @@
                                 const { u: u1, v: v1 } = spddir_to_uv(minPPt.spd, minPPt.dir);
                                 const { u: u2, v: v2 } = spddir_to_uv(maxPPt.spd, maxPPt.dir);
                                 
-                                const shearMag = Math.sqrt(Math.pow(u1-u2, 2) + Math.pow(v1-v2, 2)) * 1.94384;
+                                const shearMag = Math.sqrt(Math.pow(u1-u2, 2) + Math.pow(v1-v2, 2));
                                 
                                 const [gX, gY] = key.split('_').map(Number);
                                 const cellLon = gX * gridRes;
@@ -912,7 +912,7 @@
                                 
                                 const t = Math.max(0, Math.min(1, shearMag / maxExpectedShear));
                                 let color;
-                                if (t < 0.33) color = `rgba(0, 70, ${Math.floor(150 + 105 * (t / 0.33))}, 0.5)`; // black -> blue
+                                if (t < 0.33) color = `rgba(0, 0, ${Math.floor(255*(t/0.33))}, 0.5)`; // black -> blue
                                 else if (t < 0.66) color = `rgba(${Math.floor(255*((t-0.33)/0.33))}, 0, 255, 0.5)`; // blue -> purple
                                 else color = `rgba(255, 0, ${Math.floor(255*(1 - (t-0.66)/0.34))}, 0.6)`; // purple -> red
                                 
@@ -1288,9 +1288,9 @@
                                 </div>
                                 {settings.showHeatmap && (
                                     <>
-                                        <div style={{fontSize:'10px', textAlign:'center', marginBottom:'4px', fontWeight:'bold', borderTop:'1px solid #444', paddingTop:'6px'}}>VERTICAL SHEAR (kts)</div>
-                                        <div style={{height: '12px', background: 'linear-gradient(to right, rgba(0, 70, 150, 0.5), rgba(0,0,255,0.5), rgba(255,0,255,0.5), rgba(255,0,0,0.6))', borderRadius: '2px'}}></div>
-                                        <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginTop: '5px', fontFamily: 'monospace'}}><span>0</span><span>80+</span></div>
+                                        <div style={{fontSize:'10px', textAlign:'center', marginBottom:'4px', fontWeight:'bold', borderTop:'1px solid #444', paddingTop:'6px'}}>VERTICAL SHEAR (m/s)</div>
+                                        <div style={{height: '12px', background: 'linear-gradient(to right, rgba(0,0,0,0.5), rgba(0,0,255,0.5), rgba(255,0,255,0.5), rgba(255,0,0,0.6))', borderRadius: '2px'}}></div>
+                                        <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginTop: '5px', fontFamily: 'monospace'}}><span>0</span><span>40+</span></div>
                                     </>
                                 )}
                             </div>
