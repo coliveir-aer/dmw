@@ -890,7 +890,7 @@
                 if (layer.isAnimation && isPlaying && offscreenCanvasesRef.current.length > 1) {
                     intervalId = setInterval(() => {
                         setCurrentFrame(prev => (prev + 1) % offscreenCanvasesRef.current.length);
-                    }, 2000); 
+                    }, 600); 
                 }
                 return () => clearInterval(intervalId);
             }, [layer.isAnimation, isPlaying, offscreenCanvasesRef.current.length]);
