@@ -1,38 +1,39 @@
 # GOES-R ABI Derived Motion Winds (DMW) Viewer
 
-A high-performance, browser-based visualization tool for GOES-R (GOES-18/19) ABI Derived Motion Winds (DMW) products. This application interacts directly with NOAA's Big Data Program S3 buckets to scan, fetch, and render NetCDF (.nc) files using `h5wasm` and React.
+A browser-based visualization tool for exploring, analyzing, and animating GOES-18 and GOES-19 ABI Derived Motion Winds (DMW) products. The application fetches and renders data directly from NOAA's public S3 archives entirely on the client side.
 
 ## 🚀 Live Demo
 The application is hosted via GitHub Pages:
 **[https://coliveir-aer.github.io/dmw/](https://coliveir-aer.github.io/dmw/)**
 
-## 🛰️ Features
-- **Direct S3 Integration:** Scans `noaa-goes18` and `noaa-goes19` buckets in real-time to locate DMW products.
-- **Client-Side NetCDF Processing:** Uses WebAssembly (`h5wasm`) to parse HDF5/NetCDF4 data directly in the browser, eliminating the need for a backend server.
-- **Wind Barb Rendering:** Dynamically generates meteorological wind barbs from `wind_speed` and `wind_direction` vectors.
-- **Animation Engine:** Fetches sequences of files across specific time ranges to generate temporal animations of wind motion.
-- **Customizable Visualization:**
-    - Filter by minimum wind speed.
-    - Adjust vector density (barb spacing).
-    - Toggle coastline overlays using TopoJSON.
-    - Export current views as high-resolution PNGs.
-- **Multi-Domain Support:** Full Disk (F), CONUS (C), and Mesoscale (M1/M2) sectors.
+## 🛰️ Key Features
 
-## 🛠️ Tech Stack
-- **Frontend:** React (UMD), Tailwind CSS.
-- **Wasm:** `h5wasm` for NetCDF4/HDF5 parsing.
-- **Mapping:** `topojson-client` for coastline rendering.
-- **Data Source:** NOAA GOES-R Series Public S3 Buckets.
+### Data Access & Scope
+- **Multi-Satellite Support:** Seamlessly switch between GOES-19 (East) and GOES-18 (West) data streams.
+- **Comprehensive Domain Coverage:** Scan and visualize Full Disk (F), CONUS (C), Meso 1 (M1), and Meso 2 (M2) sectors.
+- **Multi-Band Selection:** Access wind data derived from various channels including Visible (Band 2), Shortwave IR (Band 7), Water Vapor (Bands 8, 9, 10), and IR Window (Band 14).
+- **Direct Download:** Option to download the raw NetCDF (`.nc`) files directly to your local machine.
+
+### Interactive Visualization
+- **Dynamic Wind Barbs:** Automatically calculates and renders meteorological wind barbs from raw speed and direction vectors.
+- **Color-Mapped Intensity:** Wind vectors are dynamically colored based on speed, complete with an auto-scaling legend for rapid visual analysis.
+- **Fluid Navigation:** Full support for mouse (click/drag, scroll to zoom) and touch gestures (pinch-to-zoom, drag) for navigating dense point clouds.
+- **Coastline Overlays:** Toggleable high-resolution global coastline and border overlays for geographic context.
+
+### Customization & Analysis
+- **Threshold Filtering:** Interactively filter out wind vectors below a specified minimum speed (m/s).
+- **Density Control:** Adjust the skip factor (barb spacing) to declutter the display during dense atmospheric events.
+- **High-Res Export:** Capture and export the current viewport as a high-resolution PNG image.
+
+### Temporal Animation
+- **Custom Time Ranges:** Select a target UTC date and define specific start/end bounds to generate custom animation sequences.
+- **Playback Controls:** Play, pause, and manually scrub through time-series data to track atmospheric motion over time.
 
 ## 📖 Usage
-1. **Select Satellite & Date:** Choose between GOES-East (19) or GOES-West (18) and a target UTC date.
-2. **Scan Domain:** Click "Scan Domain" on a specific sector (e.g., CONUS) to populate available time slots.
-3. **View Data:** - Click a time button to load a single snapshot.
-   - Use the **Animation Settings** in the sidebar to define a UTC range and channel, then click "Load Animation" to fetch a sequence.
-4. **Interact:** Drag to pan, scroll to zoom. Use the floating control panel to adjust visualization parameters.
-
-## 📂 Project Structure
-- `index.html`: The monolithic application file containing the dashboard UI, S3 scanning logic, and the React-based visualization engine.
+1. **Select Source:** Choose the target satellite (GOES-18/19) and date from the sidebar.
+2. **Scan & Load:** Open a domain accordion (e.g., CONUS) and click "Scan Domain" to locate available datasets, then click any time slot to render the snapshot.
+3. **Animate:** Use the Animation Settings section to define a UTC range and spectral band, then click "Load Animation".
+4. **Tweak Settings:** Open the floating "⚙️ Settings" panel in the viewer to adjust barb density, speed thresholds, or export the view.
 
 ---
 *Developed for rapid visualization of GOES-R ABI Level 2 Derived Motion Winds.*
