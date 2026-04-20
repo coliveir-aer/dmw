@@ -932,12 +932,17 @@
             useEffect(() => { renderToScreen(); }, [renderToScreen, transform, currentFrame]);
 
             useEffect(() => {
+                let resizeTimer;
                 const handleResize = () => {
-                    requestAnimationFrame(() => renderToScreen());
+                    clearTimeout(resizeTimer);
+                    resizeTimer = setTimeout(() => {
+                        requestAnimationFrame(() => renderToScreen());
+                    }, 250);
                 };
                 window.addEventListener('resize', handleResize);
                 window.addEventListener('orientationchange', handleResize);
                 return () => {
+                    clearTimeout(resizeTimer);
                     window.removeEventListener('resize', handleResize);
                     window.removeEventListener('orientationchange', handleResize);
                 };
