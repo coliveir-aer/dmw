@@ -201,7 +201,7 @@
                 const opt = document.createElement('option');
                 opt.value = dom.id;
                 opt.textContent = dom.name;
-                if (dom.id === 'F') opt.selected = true;
+                if (dom.id === 'C') opt.selected = true;
                 animDomainSelect.appendChild(opt);
             });
 
@@ -504,7 +504,10 @@
             document.getElementById('sidebar').classList.toggle('collapsed');
         };
 
-        window.onload = createSidebar;
+        window.onload = () => {
+            createSidebar();
+            setTimeout(() => document.getElementById('btnLoadAnim').click(), 500);
+        };
     </script>
 
     <!-- --- React Sandbox Application --- -->
@@ -611,7 +614,7 @@
             const offscreenCanvasesRef = useRef([]); // Stores array of offscreen canvases for animation
             
             const [currentFrame, setCurrentFrame] = useState(0);
-            const [isPlaying, setIsPlaying] = useState(true);
+            const [isPlaying, setIsPlaying] = useState(false);
             const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
             const [settings, setSettings] = useState({ minSpeed: 5, barbSpacing: 1, showCoast: true });
             const [showSettings, setShowSettings] = useState(false);
@@ -619,6 +622,12 @@
             
             const isDragging = useRef(false);
             const lastPos = useRef({ x:0, y:0 });
+
+            useEffect(() => {
+                const handleForcePlay = () => setIsPlaying(true);
+                window.addEventListener('force-play', handleForcePlay);
+                return () => window.removeEventListener('force-play', handleForcePlay);
+            }, []);
 
             // Base internal coordinate system
             const BASE_SIZE = 2000;
@@ -976,7 +985,7 @@
                     <div className="view-canvas-wrapper" ref={containerRef} onMouseDown={handleMouse} onMouseMove={handleMouse} onMouseUp={handleMouse} onMouseLeave={handleMouse} onWheel={handleWheel} onTouchStart={handleTouch} onTouchMove={handleTouch} onTouchEnd={handleTouch} onTouchCancel={handleTouch}>
                         <canvas ref={canvasRef} style={{position:'absolute', top:0, left:0}} />
                         
-                        <div className="controls-float" onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()}>
+                        <div className="controls-float" onMouseDown={e=>e.stopPropagation()} onMouseUp={e=>e.stopPropagation()} onMouseMove={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} onTouchMove={e=>e.stopPropagation()}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setShowSettings(!showSettings)}>
                                 <h4 style={{ margin: 0, borderBottom: showSettings ? '1px solid #444' : 'none', paddingBottom: showSettings ? '4px' : '0' }}>⚙️ Settings</h4>
                             </div>
@@ -1030,6 +1039,8 @@
             const [activeLayerId, setActiveLayerId] = useState(null);
             const [loading, setLoading] = useState(false);
             const [coastline, setCoastline] = useState(null);
+            const [animProgress, setAnimProgress] = useState(null);
+            const [showBigPlay, setShowBigPlay] = useState(null);
 
             useEffect(() => {
                 h5wasm.ready.then(() => setReady(true));
@@ -1104,11 +1115,17 @@
             };
 
             const fetchAnimSequence = async (urls, filenames, domainName) => {
-                setLoading(true);
+                setAnimProgress(0);
                 try {
+                    // Load latest image first
+                    const lastIdx = urls.length - 1;
+                    const res = await fetch(urls[lastIdx]);
+                    const buf = await res.arrayBuffer();
+                    const baseLayerId = await handleUpload(buf, filenames[lastIdx]);
+
                     const frames = [];
                     for (let i = 0; i < urls.length; i++) {
-                        notifier.info(`Loading frame ${i+1}/${urls.length}...`);
+                        setAnimProgress(Math.round(((i) / urls.length) * 100));
                         const response = await fetch(urls[i]);
                         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                         const buffer = await response.arrayBuffer();
@@ -1145,29 +1162,46 @@
                         h5wasm.FS.unlink(id);
                     }
                     
+                    setAnimProgress(100);
+                    setTimeout(() => setAnimProgress(null), 500);
+                    
                     if (frames.length > 0) {
-                        const layerId = `anim_${Date.now()}`;
-                        const layer = {
-                            id: layerId,
-                            name: `${domainName} Animation`,
-                            title: `${domainName} Animation Sequence`,
-                            isAnimation: true,
-                            frames: frames
-                        };
-                        setLayers(prev => [...prev, layer]);
-                        setActiveLayerId(layerId);
-                        notifier.success(`Loaded animation with ${frames.length} frames`);
-                    } else {
-                        notifier.error("No valid frames loaded.");
+                        if (baseLayerId) {
+                            setLayers(prev => prev.map(l => {
+                                if (l.id === baseLayerId) {
+                                    return {
+                                        ...l,
+                                        isAnimation: true,
+                                        frames: frames,
+                                        name: `${domainName} Animation`,
+                                        title: `${domainName} Animation Sequence`
+                                    };
+                                }
+                                return l;
+                            }));
+                            setShowBigPlay(baseLayerId);
+                        } else {
+                            const layerId = `anim_${Date.now()}`;
+                            const layer = {
+                                id: layerId,
+                                name: `${domainName} Animation`,
+                                title: `${domainName} Animation Sequence`,
+                                isAnimation: true,
+                                frames: frames
+                            };
+                            setLayers(prev => [...prev, layer]);
+                            setShowBigPlay(layerId);
+                        }
                     }
                 } catch (error) {
+                    setAnimProgress(null);
                     notifier.error(`Failed to load animation: ${error.message}`);
                 }
-                setLoading(false);
             };
 
             const handleUpload = async (buf, name) => {
                 setLoading(true);
+                let createdId = null;
                 try {
                     const id = `f${Date.now()}`;
                     h5wasm.FS.writeFile(id, new Uint8Array(buf));
@@ -1198,6 +1232,7 @@
                     
                     setLayers(prev => [...prev, layer]);
                     setActiveLayerId(id);
+                    createdId = id;
                     notifier.success(`Loaded DMW Point Cloud: ${name}`);
                     
                     f.close(); 
@@ -1206,6 +1241,7 @@
                     notifier.error(e.message); 
                 }
                 setLoading(false);
+                return createdId;
             };
 
             const removeLayer = (id) => {
@@ -1247,13 +1283,32 @@
                             </div>
                         )}
                         {layers.length === 0 ? (
-                            <div style={{display:'flex', alignItems:'center', justifyContent:'center', height:'100%', color:'#6c757d', fontSize:'1.2rem'}}>
-                                No Derived Motion Winds data loaded. Click "Scan Domain" in the dashboard above, then load a product.
-                            </div>
+                            <div style={{display:'flex', alignItems:'center', justifyContent:'center', height:'100%', backgroundColor: '#111'}}></div>
                         ) : (
                             layers.filter(l => l.id === activeLayerId).map(l => (
                                 <DMWView key={l.id} layer={l} coastlineData={coastline} onClose={() => removeLayer(l.id)} />
                             ))
+                        )}
+                        
+                        {animProgress !== null && (
+                            <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '300px', background: '#1e293b', padding: '20px', borderRadius: '10px', zIndex: 3000, boxShadow: '0 4px 15px rgba(0,0,0,0.5)', textAlign: 'center'}}>
+                                <div style={{color: 'white', marginBottom: '10px', fontSize: '14px', fontWeight: 'bold'}}>Loading Animation... {animProgress}%</div>
+                                <div style={{width: '100%', height: '10px', background: '#334155', borderRadius: '5px', overflow: 'hidden'}}>
+                                    <div style={{width: `${animProgress}%`, height: '100%', background: '#22c55e', transition: 'width 0.2s'}}></div>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {showBigPlay && (
+                            <div style={{position: 'absolute', top: '80px', left: '50%', transform: 'translateX(-50%)', zIndex: 3000, cursor: 'pointer'}} onClick={() => {
+                                setActiveLayerId(showBigPlay);
+                                setShowBigPlay(null);
+                                setTimeout(() => window.dispatchEvent(new CustomEvent('force-play')), 100);
+                            }}>
+                                <div style={{width: '90px', height: '90px', background: 'rgba(34, 197, 94, 0.9)', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', transition: 'transform 0.2s'}} onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
+                                    <div style={{width: 0, height: 0, borderTop: '20px solid transparent', borderBottom: '20px solid transparent', borderLeft: '32px solid white', marginLeft: '12px'}}></div>
+                                </div>
+                            </div>
                         )}
                     </div>
                     {loading && <div className="loading-overlay"><div>Processing Data...</div></div>}
