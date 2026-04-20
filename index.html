@@ -62,7 +62,7 @@
         .metadata-table th, .metadata-table td { padding: 4px; border: 1px solid #ddd; text-align: left; word-break: break-word; }
         
         /* Float UI */
-        .controls-float { position: absolute; left: 20px; top: 20px; background: rgba(0,0,0,0.75); color: white; padding: 10px; border-radius: 8px; z-index: 100; backdrop-filter: blur(4px); font-size: 12px; width: 160px; user-select: none; }
+        .controls-float { position: absolute; right: 20px; top: 20px; background: rgba(0,0,0,0.75); color: white; padding: 10px; border-radius: 8px; z-index: 100; backdrop-filter: blur(4px); font-size: 12px; width: 160px; user-select: none; }
         .controls-float h4 { margin: 0 0 8px 0; font-size: 11px; text-transform: uppercase; color: #4db8ff; border-bottom: 1px solid #444; padding-bottom: 4px; }
         .controls-float label { display: flex; justify-content: space-between; margin-bottom: 5px; align-items: center; }
         .controls-float input[type="range"] { width: 80px; }
@@ -74,12 +74,22 @@
         #legend-container { position: absolute; bottom: 20px; right: 20px; background: rgba(0,0,0,0.75); padding: 10px; border-radius: 6px; color: white; z-index: 100; width: 220px; }
         #legend { height: 12px; background: linear-gradient(to right, rgb(0,0,128), rgb(0,0,255), rgb(0,255,255), rgb(0,255,0), rgb(255,255,0), rgb(255,0,0)); border-radius: 2px; }
         #legend-labels { display: flex; justify-content: space-between; font-size: 10px; margin-top: 5px; font-family: monospace; }
+        
+        #mobile-menu-btn { display: none; position: absolute; top: 10px; left: 10px; z-index: 50; background: #1e293b; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        @media (max-width: 1024px) {
+            #mobile-menu-btn { display: block; }
+            #sidebar { position: absolute; left: 0; top: 0; height: 100vh; width: 85vw; max-width: 340px; transform: translateX(0); transition: transform 0.3s ease; box-shadow: 2px 0 10px rgba(0,0,0,0.5); overflow-y: auto; display: block; }
+            #sidebar.collapsed { transform: translateX(-100%); }
+            .controls-float { top: 50px; }
+            #domain-container { overflow-y: visible; flex: none; }
+        }
     </style>
 </head>
 <body>
-
+    <button id="mobile-menu-btn">☰ Menu</button>
+    
     <!-- LEFT PANE: SIDEBAR -->
-    <div id="sidebar">
+    <div id="sidebar" class="collapsed">
         <div class="p-5 border-b border-slate-200 bg-white shadow-sm z-10">
             <h1 class="text-xl font-bold text-slate-800 mb-4">DMW Dashboard</h1>
             <div class="space-y-4">
@@ -175,8 +185,6 @@
         const dateInput = document.getElementById('dateInput');
         const copyToast = document.getElementById('copyToast');
 
-        dateInput.value = new Date().toISOString().split('T')[0];
-
         dateInput.onchange = () => {
             PRODUCTS.forEach(p => {
                 DOMAINS.forEach(d => {
@@ -229,8 +237,19 @@
             });
 
             const now = new Date();
-            const currentMins = now.getUTCHours() * 60 + now.getUTCMinutes();
-            const startMins = Math.max(0, currentMins - 360);
+            let currentMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+            let targetDate = new Date();
+            let startMins;
+
+            if (currentMins < 360) {
+                targetDate.setUTCDate(targetDate.getUTCDate() - 1);
+                startMins = 1440 - 360 + currentMins;
+                // DO NOT REVERT: Engine handles day boundary rollover
+            } else {
+                startMins = Math.max(0, currentMins - 360);
+            }
+
+            document.getElementById('dateInput').value = targetDate.toISOString().split('T')[0];
             
             const startInput = document.getElementById('animStart');
             const endInput = document.getElementById('animEnd');
@@ -480,6 +499,10 @@
             window.dispatchEvent(new CustomEvent('load-dmw-anim', { detail: { urls, filenames, domainName } }));
         };
 
+        document.getElementById('mobile-menu-btn').onclick = () => {
+            document.getElementById('sidebar').classList.toggle('collapsed');
+        };
+
         window.onload = createSidebar;
     </script>
 
@@ -590,6 +613,8 @@
             const [isPlaying, setIsPlaying] = useState(true);
             const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
             const [settings, setSettings] = useState({ minSpeed: 5, barbSpacing: 1, showCoast: true });
+            const [showSettings, setShowSettings] = useState(false);
+            const layerInitRef = useRef(null);
             
             const isDragging = useRef(false);
             const lastPos = useRef({ x:0, y:0 });
@@ -658,6 +683,18 @@
                         }
                     }
                     allPts.push(pts);
+                }
+                
+                if (layerInitRef.current !== layer.id) {
+                    layerInitRef.current = layer.id;
+                    if (allPts.length > 0) {
+                        const firstFramePts = allPts[0].length;
+                        const targetPts = 10000;
+                        if (firstFramePts > targetPts) {
+                            const autoSkip = Math.ceil(firstFramePts / targetPts);
+                            setSettings(s => ({ ...s, barbSpacing: autoSkip }));
+                        }
+                    }
                 }
                 
                 pointClouds.current = allPts;
@@ -853,7 +890,7 @@
                 if (layer.isAnimation && isPlaying && offscreenCanvasesRef.current.length > 1) {
                     intervalId = setInterval(() => {
                         setCurrentFrame(prev => (prev + 1) % offscreenCanvasesRef.current.length);
-                    }, 500); 
+                    }, 2000); 
                 }
                 return () => clearInterval(intervalId);
             }, [layer.isAnimation, isPlaying, offscreenCanvasesRef.current.length]);
@@ -881,6 +918,40 @@
                 setTransform(t => ({ ...t, scale: Math.max(0.05, t.scale * factor) }));
             };
             
+            const lastPinchDist = useRef(null);
+
+            const handleTouch = (e) => {
+                if (e.cancelable) e.preventDefault();
+                
+                if (e.type === 'touchstart') {
+                    if (e.touches.length === 1) {
+                        isDragging.current = true;
+                        lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                    } else if (e.touches.length === 2) {
+                        const dx = e.touches[0].clientX - e.touches[1].clientX;
+                        const dy = e.touches[0].clientY - e.touches[1].clientY;
+                        lastPinchDist.current = Math.sqrt(dx * dx + dy * dy);
+                    }
+                } else if (e.type === 'touchend' || e.type === 'touchcancel') {
+                    isDragging.current = false;
+                    lastPinchDist.current = null;
+                } else if (e.type === 'touchmove') {
+                    if (e.touches.length === 1 && isDragging.current) {
+                        const dx = e.touches[0].clientX - lastPos.current.x;
+                        const dy = e.touches[0].clientY - lastPos.current.y;
+                        setTransform(t => ({ ...t, x: t.x + dx, y: t.y + dy }));
+                        lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                    } else if (e.touches.length === 2 && lastPinchDist.current !== null) {
+                        const dx = e.touches[0].clientX - e.touches[1].clientX;
+                        const dy = e.touches[0].clientY - e.touches[1].clientY;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        const factor = dist / lastPinchDist.current;
+                        setTransform(t => ({ ...t, scale: Math.max(0.05, t.scale * factor) }));
+                        lastPinchDist.current = dist;
+                    }
+                }
+            };
+            
             const handleExport = () => {
                 const link = document.createElement('a');
                 link.download = `${layer.name.replace(/[^a-z0-9]/gi, '_')}.png`;
@@ -898,38 +969,44 @@
                         <button className="btn-sm btn-danger" style={{width:'auto', margin:0}} onClick={onClose}>Close</button>
                     </div>
                     
-                    <div className="view-canvas-wrapper" ref={containerRef} onMouseDown={handleMouse} onMouseMove={handleMouse} onMouseUp={handleMouse} onMouseLeave={handleMouse} onWheel={handleWheel}>
+                    <div className="view-canvas-wrapper" ref={containerRef} onMouseDown={handleMouse} onMouseMove={handleMouse} onMouseUp={handleMouse} onMouseLeave={handleMouse} onWheel={handleWheel} onTouchStart={handleTouch} onTouchMove={handleTouch} onTouchEnd={handleTouch} onTouchCancel={handleTouch}>
                         <canvas ref={canvasRef} style={{position:'absolute', top:0, left:0}} />
                         
-                        <div className="controls-float" onMouseDown={e=>e.stopPropagation()}>
-                            <h4>Vector Settings</h4>
-                            <label>Min Spd: <span>{settings.minSpeed}m/s</span></label>
-                            <input type="range" min="0" max="30" value={settings.minSpeed} onChange={e => setSettings(s => ({...s, minSpeed: parseInt(e.target.value)}))} />
-                            
-                            <label style={{marginTop:'5px'}}>Skip Factor: <span>{settings.barbSpacing}</span></label>
-                            <input type="range" min="1" max="10" value={settings.barbSpacing} onChange={e => setSettings(s => ({...s, barbSpacing: parseInt(e.target.value)}))} />
-                            
-                            <label style={{marginTop:'10px', justifyContent:'flex-start', cursor:'pointer'}}>
-                                <input type="checkbox" checked={settings.showCoast} onChange={e => setSettings(s => ({...s, showCoast: e.target.checked}))} style={{marginRight:'8px'}}/> Coastlines
-                            </label>
-                            
-                            {layer.isAnimation && (
-                                <div style={{marginTop: '15px', borderTop: '1px solid #444', paddingTop: '10px'}}>
-                                    <h4>Animation</h4>
-                                    <div style={{display:'flex', gap:'5px', marginBottom:'5px'}}>
-                                        <button className="btn-sm" onClick={() => setIsPlaying(!isPlaying)} style={{margin:0, flex:1}}>
-                                            {isPlaying ? 'Pause' : 'Play'}
-                                        </button>
-                                    </div>
-                                    <input type="range" min="0" max={Math.max(0, (layer.frames?.length || 1) - 1)} value={currentFrame} onChange={e => {
-                                        setIsPlaying(false);
-                                        setCurrentFrame(parseInt(e.target.value));
-                                    }} style={{width: '100%'}} />
-                                    <div style={{textAlign:'center', fontSize:'10px', marginTop:'2px'}}>Frame {currentFrame + 1} / {layer.frames?.length}</div>
+                        <div className="controls-float" onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setShowSettings(!showSettings)}>
+                                <h4 style={{ margin: 0, borderBottom: showSettings ? '1px solid #444' : 'none', paddingBottom: showSettings ? '4px' : '0' }}>⚙️ Settings</h4>
+                            </div>
+                            {showSettings && (
+                                <div style={{ marginTop: '10px' }}>
+                                    <label>Min Spd: <span>{settings.minSpeed}m/s</span></label>
+                                    <input type="range" min="0" max="30" value={settings.minSpeed} onChange={e => setSettings(s => ({...s, minSpeed: parseInt(e.target.value)}))} />
+                                    
+                                    <label style={{marginTop:'5px'}}>Skip Factor: <span>{settings.barbSpacing}</span></label>
+                                    <input type="range" min="1" max="50" value={settings.barbSpacing} onChange={e => setSettings(s => ({...s, barbSpacing: parseInt(e.target.value)}))} />
+                                    
+                                    <label style={{marginTop:'10px', justifyContent:'flex-start', cursor:'pointer'}}>
+                                        <input type="checkbox" checked={settings.showCoast} onChange={e => setSettings(s => ({...s, showCoast: e.target.checked}))} style={{marginRight:'8px'}}/> Coastlines
+                                    </label>
+                                    
+                                    {layer.isAnimation && (
+                                        <div style={{marginTop: '15px', borderTop: '1px solid #444', paddingTop: '10px'}}>
+                                            <h4>Animation</h4>
+                                            <div style={{display:'flex', gap:'5px', marginBottom:'5px'}}>
+                                                <button className="btn-sm" onClick={() => setIsPlaying(!isPlaying)} style={{margin:0, flex:1}}>
+                                                    {isPlaying ? 'Pause' : 'Play'}
+                                                </button>
+                                            </div>
+                                            <input type="range" min="0" max={Math.max(0, (layer.frames?.length || 1) - 1)} value={currentFrame} onChange={e => {
+                                                setIsPlaying(false);
+                                                setCurrentFrame(parseInt(e.target.value));
+                                            }} style={{width: '100%'}} />
+                                            <div style={{textAlign:'center', fontSize:'10px', marginTop:'2px'}}>Frame {currentFrame + 1} / {layer.frames?.length}</div>
+                                        </div>
+                                    )}
+
+                                    <button className="btn-sm" onClick={handleExport} style={{marginTop: '15px'}}>Export View (PNG)</button>
                                 </div>
                             )}
-
-                            <button className="btn-sm" onClick={handleExport} style={{marginTop: '15px'}}>Export View (PNG)</button>
                         </div>
                         
                         <div id="legend-container">
