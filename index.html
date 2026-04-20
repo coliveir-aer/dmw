@@ -671,7 +671,7 @@
         // Color mapping for pressure levels (Merged View)
         function getPressureColor(p) {
             if (!p || isNaN(p)) return 'rgba(255,255,255,0.8)';
-            if (p < 400) return 'rgba(255,0,0,0.9)'; // High level
+            if (p < 400) return 'rgba(255, 165, 0, 0.9)'; // High level
             if (p >= 400 && p <= 700) return 'rgba(0,255,255,0.9)'; // Mid level
             return 'rgba(255,255,0,0.9)'; // Low level
         }
@@ -684,7 +684,7 @@
             const [currentFrame, setCurrentFrame] = useState(0);
             const [isPlaying, setIsPlaying] = useState(false);
             const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-            const [settings, setSettings] = useState({ minSpeed: 5, barbSpacing: layer.isMerged ? 2 : 1, showCoast: true, showHeatmap: layer.isMerged || false });
+            const [settings, setSettings] = useState({ minSpeed: 5, barbSpacing: layer.isMerged ? 2 : 1, showCoast: true, showHeatmap: layer.isMerged || false, binAveraging: layer.isMerged || false });
             const [showSettings, setShowSettings] = useState(false);
             const [isClosing, setIsClosing] = useState(false);
             const [localMinSpeed, setLocalMinSpeed] = useState(settings.minSpeed);
@@ -821,7 +821,7 @@
                 }
 
                 renderOffscreen();
-            }, [layer, settings.minSpeed, settings.barbSpacing, settings.showCoast, settings.showHeatmap, coastlineData]);
+            }, [layer, settings.minSpeed, settings.barbSpacing, settings.showCoast, settings.showHeatmap, settings.binAveraging, coastlineData]);
 
             // Draw to high-res offscreen canvas
             const renderOffscreen = useCallback(() => {
@@ -847,25 +847,43 @@
 
                     const pts = pointClouds.current[fIdx];
                     
-                    // Render Shear Heatmap (Calculated live based on raw point cloud binning)
-                    if (settings.showHeatmap && layer.isMerged) {
-                        const gridRes = 0.5; // Spatial grid size in degrees
-                        const grid = {};
+                    // Bin data into spatial grid for Consensus Vectors and Diagnostic Shear
+                    const gridRes = 0.5;
+                    const grid = {};
+                    
+                    for (let i = 0; i < pts.length; i++) {
+                        const pt = pts[i];
+                        if (pt.spd < settings.minSpeed || isNaN(pt.p)) continue;
                         
-                        // Fast Binning
-                        for(let i=0; i<pts.length; i++) {
-                            const pt = pts[i];
-                            if (pt.spd < settings.minSpeed || isNaN(pt.p)) continue;
-                            const gX = Math.floor(pt.lon / gridRes);
-                            const gY = Math.floor(pt.lat / gridRes);
-                            const key = `${gX}_${gY}`;
-                            if (!grid[key]) grid[key] = [];
-                            grid[key].push(pt);
+                        const gX = Math.floor(pt.lon / gridRes);
+                        const gY = Math.floor(pt.lat / gridRes);
+                        const key = `${gX}_${gY}`;
+                        
+                        if (!grid[key]) grid[key] = { pts: [], layers: { H: null, M: null, L: null } };
+                        grid[key].pts.push(pt);
+                        
+                        // Accumulate for layer consensus
+                        const pTag = pt.p < 400 ? 'H' : (pt.p <= 700 ? 'M' : 'L');
+                        const { u, v } = spddir_to_uv(pt.spd, pt.dir);
+                        
+                        if (!grid[key].layers[pTag]) {
+                            grid[key].layers[pTag] = { uSum: 0, vSum: 0, count: 0, lat: pt.lat, lon: pt.lon, p: pt.p };
                         }
-                        
+                        const l = grid[key].layers[pTag];
+                        l.uSum += u;
+                        l.vSum += v;
+                        l.count++;
+                        l.lat = pt.lat; // Use last sample position for simplicity
+                        l.lon = pt.lon;
+                        l.p = pt.p;
+                    }
+
+                    // Render Shear Heatmap (Calculated via consensus grid)
+                    if (settings.showHeatmap && layer.isMerged) {
                         const maxExpectedShear = 40; // m/s delta over column
                         for (const key in grid) {
-                            const cellPts = grid[key];
+                            const cell = grid[key];
+                            const cellPts = cell.pts;
                             if (cellPts.length < 2) continue;
                             
                             let minP = 1100, maxP = 0;
@@ -939,11 +957,31 @@
                     }
 
                     // Vectors
-                    const step = Math.max(1, settings.barbSpacing);
-                    const maxPlotSpd = maxSpd.current;
+                    const finalPlotPoints = [];
+                    if (settings.binAveraging) {
+                        for (const key in grid) {
+                            const cell = grid[key];
+                            ['H', 'M', 'L'].forEach(tag => {
+                                const l = cell.layers[tag];
+                                if (l && l.count > 0) {
+                                    const uAvg = l.uSum / l.count;
+                                    const vAvg = l.vSum / l.count;
+                                    const spd = Math.sqrt(uAvg * uAvg + vAvg * vAvg);
+                                    const dir = (270 - Math.atan2(vAvg, uAvg) * (180 / Math.PI)) % 360;
+                                    finalPlotPoints.push({ lat: l.lat, lon: l.lon, spd, dir, p: l.p });
+                                }
+                            });
+                        }
+                    } else {
+                        const step = Math.max(1, settings.barbSpacing);
+                        for (let i = 0; i < pts.length; i += step) {
+                            finalPlotPoints.push(pts[i]);
+                        }
+                    }
 
-                    for (let i = 0; i < pts.length; i += step) {
-                        const pt = pts[i];
+                    const maxPlotSpd = maxSpd.current;
+                    for (let i = 0; i < finalPlotPoints.length; i++) {
+                        const pt = finalPlotPoints[i];
                         if (pt.spd < settings.minSpeed) continue;
                         
                         const pos = proj(pt.lat, pt.lon);
@@ -1210,12 +1248,20 @@
                                         <button className="btn-sm" style={{ width: '25px', margin: 0 }} onClick={() => setLocalMinSpeed(localMinSpeed + 1)}>+</button>
                                     </div>
                                     
-                                    <label style={{marginTop:'5px'}}>Skip Factor: <span>{localBarbSpacing}</span></label>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                        <button className="btn-sm" style={{ width: '25px', margin: 0 }} onClick={() => setLocalBarbSpacing(Math.max(1, localBarbSpacing - 1))}>-</button>
-                                        <input type="number" min="1" max="50" value={localBarbSpacing} onChange={e => setLocalBarbSpacing(parseInt(e.target.value) || 1)} style={{ width: '40px', background: '#333', color: 'white', border: '1px solid #555', textAlign: 'center', borderRadius: '3px', fontSize: '11px', padding: '2px 0' }} />
-                                        <button className="btn-sm" style={{ width: '25px', margin: 0 }} onClick={() => setLocalBarbSpacing(localBarbSpacing + 1)}>+</button>
-                                    </div>
+                                    {!settings.binAveraging && (
+                                        <>
+                                            <label style={{marginTop:'5px'}}>Skip Factor: <span>{localBarbSpacing}</span></label>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                                <button className="btn-sm" style={{ width: '25px', margin: 0 }} onClick={() => setLocalBarbSpacing(Math.max(1, localBarbSpacing - 1))}>-</button>
+                                                <input type="number" min="1" max="50" value={localBarbSpacing} onChange={e => setLocalBarbSpacing(parseInt(e.target.value) || 1)} style={{ width: '40px', background: '#333', color: 'white', border: '1px solid #555', textAlign: 'center', borderRadius: '3px', fontSize: '11px', padding: '2px 0' }} />
+                                                <button className="btn-sm" style={{ width: '25px', margin: 0 }} onClick={() => setLocalBarbSpacing(localBarbSpacing + 1)}>+</button>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    <label style={{marginTop:'10px', justifyContent:'flex-start', cursor:'pointer'}}>
+                                        <input type="checkbox" checked={settings.binAveraging} onChange={e => setSettings(s => ({...s, binAveraging: e.target.checked}))} style={{marginRight:'8px'}}/> Bin Averaging
+                                    </label>
                                     
                                     <label style={{marginTop:'10px', justifyContent:'flex-start', cursor:'pointer'}}>
                                         <input type="checkbox" checked={settings.showCoast} onChange={e => setSettings(s => ({...s, showCoast: e.target.checked}))} style={{marginRight:'8px'}}/> Coastlines
@@ -1236,7 +1282,7 @@
                             <div id="legend-container" style={{width: '240px'}}>
                                 <div style={{fontSize:'10px', textAlign:'center', marginBottom:'4px', fontWeight:'bold'}}>WIND ALTITUDE (hPa)</div>
                                 <div style={{display:'flex', justifyContent:'space-between', marginBottom:'10px', fontSize:'9px', fontWeight:'bold', textShadow:'1px 1px 1px #000'}}>
-                                    <span style={{color:'rgba(255,0,0,0.9)'}}>High (&lt;400)</span>
+                                    <span style={{color:'rgba(255, 165, 0, 0.9)'}}>High (&lt;400)</span>
                                     <span style={{color:'rgba(0,255,255,0.9)'}}>Mid (400-700)</span>
                                     <span style={{color:'rgba(255,255,0,0.9)'}}>Low (&gt;700)</span>
                                 </div>
